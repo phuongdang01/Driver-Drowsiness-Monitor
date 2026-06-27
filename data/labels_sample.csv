@@ -1,0 +1,5 @@
+video_path,start_sec,end_sec,label
+Video Database/Sub 02.avi,0,60,ALERT
+Video Database/Sub 03.avi,0,15,ALERT
+Video Database/Sub 03.avi,15,25,DROWSY
+Video Database/Sub 03.avi,25,60,ALERT

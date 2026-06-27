@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Driver Drowsiness Monitor</title>
+  <style>
+    :root {
+      --bg:#071019; --card:#0d1822; --line:#1e3446; --text:#eaf4ff; --muted:#8eacc5;
+      --green:#53e085; --yellow:#ffd166; --orange:#ff9f1c; --red:#ff4d5e; --blue:#66c2ff;
+    }
+    * { box-sizing:border-box; }
+    html, body { height:100%; margin:0; background:var(--bg); color:var(--text); font-family:Arial, sans-serif; overflow:hidden; }
+    header { height:42px; display:flex; align-items:center; justify-content:space-between; padding:6px 10px; border-bottom:1px solid var(--line); background:#08131d; }
+    h1 { font-size:15px; margin:0; white-space:nowrap; }
+    #topStatus { font-size:12px; color:var(--muted); text-align:right; }
+    .layout { height:calc(100vh - 42px); display:grid; grid-template-columns:minmax(0, 1fr) 330px; gap:8px; padding:8px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:hidden; min-height:0; }
+    .main { display:flex; flex-direction:column; min-height:0; }
+    .video-wrap { flex:1; min-height:0; background:#000; display:flex; align-items:center; justify-content:center; position:relative; }
+    #processed { width:100%; height:100%; object-fit:contain; display:block; background:#000; }
+    #camera { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
+    #capture { display:none; }
+    .hint { position:absolute; left:12px; right:12px; top:12px; color:#d8eaff; font-size:13px; background:rgba(0,0,0,.5); padding:8px; border-radius:8px; }
+    .controls { flex:0 0 auto; display:flex; gap:6px; align-items:center; flex-wrap:wrap; padding:8px; border-top:1px solid var(--line); }
+    button, select, input { background:#0b141d; color:var(--text); border:1px solid var(--line); border-radius:7px; padding:7px 9px; font-size:12px; min-height:34px; }
+    button { cursor:pointer; } button:hover { border-color:var(--blue); }
+    .sound-row { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+    .side { display:flex; flex-direction:column; min-height:0; }
+    h2 { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; margin:0; padding:8px 10px; border-bottom:1px solid var(--line); }
+    .status { padding:9px 8px; text-align:center; }
+    .state { font-size:24px; font-weight:800; line-height:1.05; margin:0 0 5px; }
+    .ALERT { color:var(--green); } .SUSPICIOUS { color:var(--yellow); } .DROWSY { color:var(--orange); } .CRITICAL { color:var(--red); } .STOPPED,.ERROR { color:var(--muted); }
+    .evidence { font-size:34px; font-weight:800; line-height:1; }
+
+    .metric.warn {
+      border-color:var(--red); background:rgba(255,82,82,0.12);
+      box-shadow:inset 0 0 0 1px rgba(255,82,82,0.28);
+    }
+    .metric.warn .label { color:#ffb3ba; }
+    .metric.warn .value { color:#ff6b6b; font-weight:800; }
+    .label { font-size:10px; color:#9db9d2; text-transform:uppercase; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; padding:8px; }
+    .metric { background:#0b141d; border:1px solid var(--line); border-radius:7px; padding:6px 7px; min-height:49px; }
+    .value { font-family:Consolas, monospace; font-size:14px; margin-top:2px; color:#f7fbff; line-height:1.12; overflow-wrap:anywhere; }
+    .reasons { flex:1; min-height:0; padding:8px; display:flex; flex-wrap:wrap; align-content:flex-start; gap:6px; overflow:hidden; }
+    .tag { background:#2b1720; border:1px solid #6b2431; color:#ffb3ba; border-radius:6px; padding:5px 7px; font-family:Consolas, monospace; font-size:10.5px; }
+    .ok { color:var(--green); font-size:12px; }
+    .mini { color:var(--muted); font-size:11px; padding:0 8px 8px; }
+    @media(max-width: 900px) {
+      html, body { overflow:auto; }
+      .layout { height:auto; min-height:calc(100vh - 42px); grid-template-columns:1fr; gap:6px; padding:6px; }
+      .main { height:58vh; min-height:420px; }
+      .side { min-height:auto; }
+      .state { font-size:21px; }
+      .evidence { font-size:28px; }
+      .metric { min-height:44px; padding:5px 6px; }
+      .value { font-size:13px; }
+      h2 { padding:6px 8px; }
+      .reasons { max-height:95px; overflow:hidden; }
+    }
+    @media(max-height: 680px) and (min-width: 901px) {
+      .state { font-size:20px; } .evidence { font-size:28px; }
+      .metric { min-height:43px; padding:5px 6px; } .value { font-size:13px; }
+      h2 { padding:6px 8px; } .status { padding:7px 8px; }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Driver Drowsiness Monitor</h1>
+  <div id="topStatus">STOPPED</div>
+</header>
+
+<div class="layout">
+  <section class="card main">
+    <div class="video-wrap">
+      <video id="camera" playsinline muted autoplay></video>
+      <canvas id="capture"></canvas>
+      <img id="processed" alt="Processed camera stream" />
+      <div id="hint" class="hint">Bấm Start camera, cho phép quyền camera. Video xử lý sẽ hiển thị vùng mắt, miệng và hướng đầu.</div>
+    </div>
+    <div class="controls">
+      <select id="cameraFacing">
+        <option value="user">Camera trước</option>
+        <option value="environment">Camera sau</option>
+      </select>
+      <select id="engine"><option value="fsm">fsm</option><option value="legacy">legacy</option><option value="ml">ml</option></select>
+      <select id="sendFps"><option value="6">6 FPS</option><option value="8" selected>8 FPS</option><option value="10">10 FPS</option></select>
+      <button onclick="startCamera()">Start camera</button>
+      <button onclick="stopCamera()">Stop</button>
+      <button onclick="resetCalibration()">Reset calibration</button>
+      <label class="sound-row"><input id="soundEnable" type="checkbox" checked /> Âm thanh</label>
+    </div>
+  </section>
+
+  <aside class="card side">
+    <h2>Trạng thái</h2>
+    <div class="status">
+      <div id="state" class="state STOPPED">STOPPED</div>
+      <div class="label">Evidence score</div>
+      <div id="evidence" class="evidence">0.00</div>
+      <div id="fps" class="label">FPS: 0</div>
+    </div>
+    <h2>Đặc trưng realtime</h2>
+    <div class="grid">
+      <div class="metric"><div class="label">EAR / threshold</div><div id="ear" class="value">-</div></div>
+      <div class="metric"><div class="label">MAR / threshold</div><div id="mar" class="value">-</div></div>
+      <div class="metric"><div class="label">PERCLOS 60s</div><div id="perclos" class="value">-</div></div>
+      <div class="metric"><div class="label">PERCLOS 5s</div><div id="p5" class="value">-</div></div>
+      <div class="metric"><div class="label">Blink / 10s</div><div id="blink" class="value">-</div></div>
+      <div class="metric"><div class="label">Yawn / 60s</div><div id="yawn" class="value">-</div></div>
+      <div class="metric"><div class="label">Pitch</div><div id="pitch" class="value">-</div></div>
+      <div class="metric"><div class="label">Pitch velocity</div><div id="pv" class="value">-</div></div>
+      <div class="metric"><div class="label">Closed frames</div><div id="closed" class="value">-</div></div>
+      <div class="metric"><div class="label">Head Nod</div><div id="nod" class="value">-</div></div>
+    </div>
+    <h2>Lý do cảnh báo</h2>
+    <div id="reasons" class="reasons"><span class="ok">Không có</span></div>
+    <div class="mini">Mỗi người dùng có session riêng: calibration, threshold, FSM và PERCLOS không dùng chung.</div>
+  </aside>
+</div>
+
+<script>
+const alarmAudio = new Audio('/static/alert.wav');
+alarmAudio.preload = 'auto';
+alarmAudio.volume = 1.0;
+let lastSoundTime = 0;
+let audioUnlocked = false;
+let stream = null;
+let running = false;
+let busy = false;
+let timer = null;
+let sessionId = localStorage.getItem('dms_mobile_session_id') || crypto.randomUUID();
+localStorage.setItem('dms_mobile_session_id', sessionId);
+
+function unlockAudio() {
+  if (audioUnlocked) return;
+  const oldVol = alarmAudio.volume;
+  alarmAudio.volume = 0;
+  alarmAudio.play().then(() => {
+    alarmAudio.pause(); alarmAudio.currentTime = 0; alarmAudio.volume = oldVol; audioUnlocked = true;
+  }).catch(() => { alarmAudio.volume = oldVol; });
+}
+document.addEventListener('click', unlockAudio, {once:false});
+
+function playWarningSound(state) {
+  if (!document.getElementById('soundEnable').checked) return;
+  if (state !== 'DROWSY' && state !== 'CRITICAL') return;
+  const now = Date.now();
+  const gap = state === 'CRITICAL' ? 1200 : 5000;
+  if (now - lastSoundTime < gap) return;
+  lastSoundTime = now;
+  alarmAudio.currentTime = 0;
+  alarmAudio.play().catch(() => {
+    document.getElementById('topStatus').textContent = 'Trình duyệt chặn âm thanh. Hãy bấm vào trang một lần.';
+  });
+}
+
+async function postJson(url, payload) {
+  const res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+  return await res.json();
+}
+
+async function startCamera() {
+  unlockAudio();
+  stopCamera(false);
+  const facingMode = document.getElementById('cameraFacing').value;
+  const constraints = {
+    video: { facingMode, width:{ideal:640}, height:{ideal:480}, frameRate:{ideal:15, max:30} },
+    audio: false
+  };
+  try {
+    stream = await navigator.mediaDevices.getUserMedia(constraints);
+    const video = document.getElementById('camera');
+    video.srcObject = stream;
+    await video.play();
+    running = true;
+    document.getElementById('hint').style.display = 'none';
+    const engine = document.getElementById('engine').value;
+    await postJson('/api/mobile/start', {session_id:sessionId, engine});
+    loopSendFrame();
+  } catch (err) {
+    document.getElementById('hint').style.display = 'block';
+    document.getElementById('hint').textContent = 'Không mở được camera: ' + err.message + '. Hãy dùng HTTPS hoặc localhost và cho phép quyền camera.';
+  }
+}
+
+function stopCamera(callServer=true) {
+  running = false;
+  busy = false;
+  if (timer) { clearTimeout(timer); timer = null; }
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  if (callServer) postJson('/api/mobile/stop', {session_id:sessionId}).catch(()=>{});
+  updateState({state:'STOPPED', label:'STOPPED', evidence:0, fps:0, metrics:{}, reasons:[]});
+}
+
+async function resetCalibration() {
+  const engine = document.getElementById('engine').value;
+  await postJson('/api/mobile/reset', {session_id:sessionId, engine});
+}
+
+function captureDataUrl() {
+  const video = document.getElementById('camera');
+  const canvas = document.getElementById('capture');
+  const w = 480;
+  const vh = video.videoHeight || 480;
+  const vw = video.videoWidth || 640;
+  const h = Math.max(240, Math.round(w * vh / Math.max(vw, 1)));
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d', {willReadFrequently:false});
+  ctx.drawImage(video, 0, 0, w, h);
+  return canvas.toDataURL('image/jpeg', 0.72);
+}
+
+async function loopSendFrame() {
+  if (!running) return;
+  const targetFps = Number(document.getElementById('sendFps').value || 8);
+  const delay = Math.max(80, Math.round(1000 / targetFps));
+  if (!busy) {
+    busy = true;
+    try {
+      const image = captureDataUrl();
+      const engine = document.getElementById('engine').value;
+      const r = await postJson('/api/mobile/frame', {session_id:sessionId, engine, image});
+      if (r.ok) {
+        document.getElementById('processed').src = r.overlay;
+        updateState(r.status);
+      } else {
+        document.getElementById('topStatus').textContent = 'Frame error: ' + (r.error || 'unknown');
+      }
+    } catch (err) {
+      document.getElementById('topStatus').textContent = 'Lỗi gửi frame: ' + err.message;
+    } finally {
+      busy = false;
+    }
+  }
+  timer = setTimeout(loopSendFrame, delay);
+}
+
+function cls(state) { return ['ALERT','SUSPICIOUS','DROWSY','CRITICAL','STOPPED','ERROR'].includes(state) ? state : 'STOPPED'; }
+function num(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
+function setMetric(id, text, warn=false) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  const box = el.closest('.metric');
+  if (box) box.classList.toggle('warn', !!warn);
+}
+function updateState(s) {
+  s = s || {}; const m = s.metrics || {};
+  const stateEl = document.getElementById('state');
+  stateEl.className = 'state ' + cls(s.state);
+  stateEl.textContent = s.label || s.state || 'STOPPED';
+  document.getElementById('topStatus').textContent = `${s.state || '-'} | ${s.source || 'browser_camera'} | frame ${s.frame_count || 0}`;
+  document.getElementById('evidence').textContent = Number(s.evidence || 0).toFixed(2);
+  document.getElementById('fps').textContent = `FPS: ${s.fps || 0}`;
+  const f = s.flags || {};
+  const earWarn = f.ear_below_threshold ?? (num(m.ear) !== null && num(m.ear_threshold) !== null && num(m.ear) < num(m.ear_threshold));
+  const marWarn = f.mar_above_threshold ?? (num(m.mar) !== null && num(m.mar_threshold) !== null && num(m.mar) > num(m.mar_threshold));
+  setMetric('ear', `${m.ear ?? '-'} / ${m.ear_threshold ?? '-'}`, earWarn);
+  setMetric('mar', `${m.mar ?? '-'} / ${m.mar_threshold ?? '-'}`, marWarn);
+  setMetric('perclos', m.perclos ?? '-', f.perclos_high ?? (num(m.perclos) !== null && num(m.perclos) >= 0.20));
+  setMetric('p5', m.perclos_short ?? '-', f.perclos_short_high ?? (num(m.perclos_short) !== null && num(m.perclos_short) >= 0.60));
+  setMetric('blink', m.blink_frequency ?? '-', f.blink_high ?? (num(m.blink_frequency) !== null && num(m.blink_frequency) > 10));
+  setMetric('yawn', m.yawn_frequency ?? '-', f.yawn_high ?? (num(m.yawn_frequency) !== null && num(m.yawn_frequency) >= 3));
+  setMetric('pitch', m.pitch ?? '-', f.pitch_high ?? false);
+  setMetric('pv', m.pitch_velocity ?? '-', false);
+  setMetric('closed', m.eyes_closed_consecutive ?? '-', f.closed_high ?? (num(m.eyes_closed_consecutive) !== null && num(m.eyes_closed_consecutive) >= 15));
+  setMetric('nod', m.head_nod_detected ? 'NOD' : '-', f.head_nod ?? m.head_nod_detected);
+  const reasons = document.getElementById('reasons'); reasons.innerHTML = '';
+  if (s.reasons && s.reasons.length) s.reasons.forEach(r => { const e = document.createElement('div'); e.className='tag'; e.textContent=r; reasons.appendChild(e); });
+  else reasons.innerHTML = '<span class="ok">Không có</span>';
+  playWarningSound(s.state);
+}
+
+window.addEventListener('beforeunload', () => { if (running) navigator.sendBeacon('/api/mobile/stop', JSON.stringify({session_id:sessionId})); });
+</script>
+</body>
+</html>

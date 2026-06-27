@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DMS Web Monitor</title>
+  <style>
+    :root {
+      --bg:#071018; --panel:#101b26; --line:#203040; --text:#e9f1f7;
+      --muted:#8da1b3; --green:#00e676; --yellow:#ffe066; --orange:#ff9800;
+      --red:#ff5252; --blue:#4fc3f7;
+    }
+    * { box-sizing:border-box; }
+    html, body { height:100%; }
+    body {
+      margin:0; font-family:Arial, sans-serif; background:var(--bg); color:var(--text);
+      overflow:hidden;
+    }
+    header {
+      height:42px; padding:8px 14px; border-bottom:1px solid var(--line);
+      display:flex; justify-content:space-between; align-items:center; background:#0b141d;
+    }
+    h1 { margin:0; font-size:16px; line-height:1; }
+    #topStatus { font-size:14px; }
+
+    .layout {
+      height:calc(100vh - 42px);
+      display:grid; grid-template-columns:minmax(0, 1fr) 340px; gap:10px; padding:10px;
+      overflow:hidden;
+    }
+    .card {
+      background:var(--panel); border:1px solid var(--line); border-radius:10px;
+      overflow:hidden; min-height:0;
+    }
+    .main-card { display:flex; flex-direction:column; height:100%; }
+    .side-card { display:flex; flex-direction:column; height:100%; }
+    .card h2 {
+      font-size:12px; color:#9db9d2; letter-spacing:.05em; margin:0; padding:8px 10px;
+      border-bottom:1px solid var(--line); text-transform:uppercase; flex:0 0 auto;
+    }
+
+    .video-wrap {
+      flex:1 1 auto; min-height:0; width:100%; background:#000;
+      display:flex; justify-content:center; align-items:center; overflow:hidden;
+    }
+    .video {
+      width:100%; height:100%; max-height:none; object-fit:contain; display:block; background:#000;
+    }
+    .controls {
+      flex:0 0 auto; display:flex; gap:6px; flex-wrap:wrap; padding:8px;
+      border-top:1px solid var(--line); align-items:center;
+    }
+    button, select, input {
+      background:#0b141d; color:var(--text); border:1px solid var(--line);
+      border-radius:7px; padding:6px 8px; font-size:12px; min-height:32px;
+    }
+    button { cursor:pointer; white-space:nowrap; }
+    button:hover { border-color:var(--blue); }
+    #videoFile { flex:1; min-width:220px; }
+    #uploadMsg { width:100%; padding-top:2px; }
+    .sound-row { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+    .sound-row input { min-height:auto; }
+
+    .status { flex:0 0 auto; padding:10px 8px 8px; text-align:center; }
+    .state { font-size:25px; font-weight:800; margin:2px 0 4px; line-height:1.1; }
+    .ALERT { color:var(--green); } .SUSPICIOUS { color:var(--yellow); }
+    .DROWSY { color:var(--orange); } .CRITICAL { color:var(--red); }
+    .STOPPED,.ERROR { color:var(--muted); }
+    .evidence { font-size:38px; font-weight:800; margin:2px 0; line-height:1; }
+
+    .grid {
+      flex:0 0 auto; display:grid; grid-template-columns:1fr 1fr; gap:6px; padding:8px;
+    }
+    .metric { background:#0b141d; border:1px solid var(--line); border-radius:7px; padding:6px 7px; min-height:54px; }
+    .metric.warn {
+      border-color:var(--red); background:rgba(255,82,82,0.12);
+      box-shadow:inset 0 0 0 1px rgba(255,82,82,0.28);
+    }
+    .metric.warn .label { color:#ffb3ba; }
+    .metric.warn .value { color:#ff6b6b; font-weight:800; }
+    .label { font-size:10px; color:#9db9d2; text-transform:uppercase; }
+    .value { font-family:Consolas, monospace; font-size:15px; margin-top:2px; color:#f7fbff; line-height:1.15; overflow-wrap:anywhere; }
+
+    .reasons {
+      flex:1 1 auto; min-height:0; padding:8px; display:flex; flex-wrap:wrap; align-content:flex-start;
+      gap:6px; border-top:1px solid transparent; overflow:hidden;
+    }
+    .tag { background:#2b1720; border:1px solid #6b2431; color:#ffb3ba; border-radius:6px; padding:5px 7px; font-family:Consolas, monospace; font-size:11px; }
+    .ok { color:var(--green); font-size:12px; }
+    @media(max-width: 1000px) {
+      body { overflow:auto; }
+      .layout { height:auto; grid-template-columns:1fr; overflow:visible; }
+      .main-card, .side-card { height:auto; }
+      .video-wrap { height:55vh; }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Driver Drowsiness Monitor</h1>
+  <div id="topStatus">STOPPED</div>
+</header>
+
+<div class="layout">
+  <section class="card main-card">
+    <h2>Camera / Video stream</h2>
+    <div class="video-wrap"><img id="video" class="video" src="/video_feed" alt="Video stream" /></div>
+    <div class="controls">
+      <select id="source">
+        <option value="webcam">webcam</option>
+        <option value="file">file</option>
+      </select>
+      <input id="videoFile" type="file" accept="video/*,.avi,.mp4,.mov,.mkv,.webm" />
+      <select id="engine"><option value="fsm">fsm</option><option value="legacy">legacy</option><option value="ml">ml</option></select>
+      <button onclick="uploadAndStart()">Upload & Start</button>
+      <button onclick="startSystem()">Start webcam</button>
+      <button onclick="stopSystem()">Stop</button>
+      <button onclick="resetSystem()">Reset calibration</button>
+      <label class="sound-row"><input id="soundEnable" type="checkbox" checked /> Âm thanh cảnh báo</label>
+      <div id="uploadMsg" class="label">Chọn video rồi bấm Upload & Start. Không cần nhập đường dẫn.</div>
+    </div>
+  </section>
+
+  <aside class="card side-card">
+    <h2>Trạng thái</h2>
+    <div class="status">
+      <div id="state" class="state STOPPED">STOPPED</div>
+      <div class="label">Evidence score</div>
+      <div id="evidence" class="evidence">0.00</div>
+      <div id="fps" class="label">FPS: 0</div>
+    </div>
+    <h2>Đặc trưng realtime</h2>
+    <div class="grid">
+      <div class="metric"><div class="label">EAR / threshold</div><div id="ear" class="value">-</div></div>
+      <div class="metric"><div class="label">MAR / threshold</div><div id="mar" class="value">-</div></div>
+      <div class="metric"><div class="label">PERCLOS 60s</div><div id="perclos" class="value">-</div></div>
+      <div class="metric"><div class="label">PERCLOS 5s</div><div id="p5" class="value">-</div></div>
+      <div class="metric"><div class="label">Blink / 10s</div><div id="blink" class="value">-</div></div>
+      <div class="metric"><div class="label">Yawn / 60s</div><div id="yawn" class="value">-</div></div>
+      <div class="metric"><div class="label">Pitch</div><div id="pitch" class="value">-</div></div>
+      <div class="metric"><div class="label">Pitch velocity</div><div id="pv" class="value">-</div></div>
+      <div class="metric"><div class="label">Closed frames</div><div id="closed" class="value">-</div></div>
+      <div class="metric"><div class="label">Head Nod</div><div id="nod" class="value">-</div></div>
+    </div>
+    <h2>Lý do cảnh báo</h2>
+    <div id="reasons" class="reasons"><span class="ok">Không có</span></div>
+  </aside>
+</div>
+
+<script>
+const alarmAudio = new Audio('/static/alert.wav');
+alarmAudio.preload = 'auto';
+alarmAudio.volume = 1.0;
+let lastSoundTime = 0;
+let lastState = 'STOPPED';
+let audioUnlocked = false;
+
+function unlockAudio() {
+  if (audioUnlocked) return;
+  const oldVol = alarmAudio.volume;
+  alarmAudio.volume = 0;
+  alarmAudio.play().then(() => {
+    alarmAudio.pause();
+    alarmAudio.currentTime = 0;
+    alarmAudio.volume = oldVol;
+    audioUnlocked = true;
+  }).catch(() => {
+    alarmAudio.volume = oldVol;
+  });
+}
+document.addEventListener('click', unlockAudio, {once:false});
+
+function playWarningSound(state) {
+  const enabled = document.getElementById('soundEnable')?.checked;
+  if (!enabled) return;
+  const now = Date.now();
+  const gap = state === 'CRITICAL' ? 1200 : 5000;
+  if (state !== 'DROWSY' && state !== 'CRITICAL') return;
+  if (now - lastSoundTime < gap) return;
+  lastSoundTime = now;
+  alarmAudio.currentTime = 0;
+  alarmAudio.play().catch(() => {
+    document.getElementById('uploadMsg').textContent = 'Trình duyệt đang chặn âm thanh. Hãy bấm vào trang một lần rồi chạy lại.';
+  });
+}
+
+async function post(url, body={}) {
+  const res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  return await res.json();
+}
+async function startSystem() {
+  unlockAudio();
+  const payload = {source: 'webcam', engine: document.getElementById('engine').value};
+  document.getElementById('source').value = 'webcam';
+  const r = await post('/api/start', payload);
+  document.getElementById('uploadMsg').textContent = r.ok ? 'Đã chạy webcam.' : ('Lỗi: ' + (r.error || 'unknown'));
+  document.getElementById('video').src = '/video_feed?t=' + Date.now();
+}
+async function uploadAndStart() {
+  unlockAudio();
+  const fileInput = document.getElementById('videoFile');
+  const msg = document.getElementById('uploadMsg');
+  if (!fileInput.files || fileInput.files.length === 0) { msg.textContent = 'Bạn chưa chọn video.'; return; }
+  msg.textContent = 'Đang upload video...';
+  const formData = new FormData();
+  formData.append('video', fileInput.files[0]);
+  const uploadRes = await fetch('/api/upload', {method:'POST', body: formData});
+  const uploadJson = await uploadRes.json();
+  if (!uploadJson.ok) { msg.textContent = 'Upload lỗi: ' + (uploadJson.error || 'unknown'); return; }
+  document.getElementById('source').value = 'file';
+  const startJson = await post('/api/start', {source:'file', video_path: uploadJson.video_path, engine: document.getElementById('engine').value});
+  msg.textContent = startJson.ok ? ('Đang chạy video: ' + uploadJson.filename) : ('Start lỗi: ' + (startJson.error || 'unknown'));
+  document.getElementById('video').src = '/video_feed?t=' + Date.now();
+}
+async function stopSystem() { await post('/api/stop'); }
+async function resetSystem() { await post('/api/reset'); }
+function cls(state) { return ['ALERT','SUSPICIOUS','DROWSY','CRITICAL','STOPPED','ERROR'].includes(state) ? state : 'STOPPED'; }
+function num(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
+function setMetric(id, text, warn=false) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  const box = el.closest('.metric');
+  if (box) box.classList.toggle('warn', !!warn);
+}
+async function poll() {
+  try {
+    const s = await (await fetch('/api/status')).json();
+    const m = s.metrics || {};
+    const stateEl = document.getElementById('state');
+    stateEl.className = 'state ' + cls(s.state);
+    stateEl.textContent = s.label || s.state || 'STOPPED';
+    playWarningSound(s.state);
+    lastState = s.state || 'STOPPED';
+    document.getElementById('topStatus').textContent = `${s.state || '-'} | ${s.engine || '-'} | frame ${s.frame_count || 0}`;
+    document.getElementById('evidence').textContent = Number(s.evidence || 0).toFixed(2);
+    document.getElementById('fps').textContent = `FPS: ${s.fps || 0}`;
+    const f = s.flags || {};
+    const earWarn = f.ear_below_threshold ?? (num(m.ear) !== null && num(m.ear_threshold) !== null && num(m.ear) < num(m.ear_threshold));
+    const marWarn = f.mar_above_threshold ?? (num(m.mar) !== null && num(m.mar_threshold) !== null && num(m.mar) > num(m.mar_threshold));
+    setMetric('ear', `${m.ear ?? '-'} / ${m.ear_threshold ?? '-'}`, earWarn);
+    setMetric('mar', `${m.mar ?? '-'} / ${m.mar_threshold ?? '-'}`, marWarn);
+    setMetric('perclos', m.perclos ?? '-', f.perclos_high ?? (num(m.perclos) !== null && num(m.perclos) >= 0.20));
+    setMetric('p5', m.perclos_short ?? '-', f.perclos_short_high ?? (num(m.perclos_short) !== null && num(m.perclos_short) >= 0.60));
+    setMetric('blink', m.blink_frequency ?? '-', f.blink_high ?? (num(m.blink_frequency) !== null && num(m.blink_frequency) > 10));
+    setMetric('yawn', m.yawn_frequency ?? '-', f.yawn_high ?? (num(m.yawn_frequency) !== null && num(m.yawn_frequency) >= 3));
+    setMetric('pitch', m.pitch ?? '-', f.pitch_high ?? false);
+    setMetric('pv', m.pitch_velocity ?? '-', false);
+    setMetric('closed', m.eyes_closed_consecutive ?? '-', f.closed_high ?? (num(m.eyes_closed_consecutive) !== null && num(m.eyes_closed_consecutive) >= 15));
+    setMetric('nod', m.head_nod_detected ? 'NOD' : '-', f.head_nod ?? m.head_nod_detected);
+    const reasons = document.getElementById('reasons');
+    reasons.innerHTML = '';
+    if (s.reasons && s.reasons.length) s.reasons.forEach(r => { const e = document.createElement('div'); e.className='tag'; e.textContent=r; reasons.appendChild(e); });
+    else reasons.innerHTML = '<span class="ok">Không có</span>';
+  } catch (e) {}
+}
+setInterval(poll, 300); poll();
+</script>
+</body>
+</html>
