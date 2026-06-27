@@ -510,12 +510,19 @@ runtime: Optional[DMSWebRuntime] = None
 
 @app.get("/")
 def index():
-    return render_template("index.html")
+    # Public deployment opens the browser-camera/mobile realtime interface by default.
+    return render_template("mobile.html")
 
 
 @app.get("/mobile")
 def mobile():
     return render_template("mobile.html")
+
+
+@app.get("/upload")
+def upload_page():
+    # Kept only for offline testing with recorded videos. Not needed in real deployment.
+    return render_template("index.html")
 
 
 @app.post("/api/mobile/start")

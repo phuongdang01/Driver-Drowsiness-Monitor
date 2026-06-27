@@ -38,3 +38,13 @@ https://xxxxx.trycloudflare.com/mobile
 
 - `/` : giao diện cũ cho webcam/video upload trên máy chủ.
 - `/mobile` : giao diện realtime camera từ trình duyệt điện thoại/laptop.
+
+
+## FPS
+
+Giao diện mobile có các mức 8/10/12/15/20/30 FPS. Mức 30 FPS phù hợp khi server đủ mạnh; nếu Render free bị chậm, chọn 15–20 FPS để giảm độ trễ.
+
+
+## Event history
+
+Mobile realtime UI keeps an event history in the browser localStorage for each session/device. It records date/time, state, evidence score, EAR/MAR/PERCLOS and alert reasons when the state becomes SUSPICIOUS, DROWSY or CRITICAL. The Upload video page is kept at `/upload` for testing/dataset evaluation and can be removed later in production.
